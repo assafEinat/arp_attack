@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: arp_attack",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/arp_attack.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["Ethernet", "192.168.1.105", "192.168.1.1", "http://example.com"]
+        }
+    ]
+}

